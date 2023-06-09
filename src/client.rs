@@ -94,11 +94,14 @@ impl SumsClient {
 
         login_form.submit().await?;
 
+        // Try to look for an error message on the login screen
         let login_error = self
             .client
             .find(Locator::XPath("/html/body/div/div/div/div[1]/section/p"))
             .await;
 
+        // If an error message was found, we're still on the login screen, so
+        // auth failed. Otherwise, we are on the SU screen and auth succeeded.
         match login_error {
             Ok(element) => Err(SumsClientAuthError::AuthFailedError(element.text().await?)),
             Err(_) => Ok(()),
