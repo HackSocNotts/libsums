@@ -1,18 +1,29 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, num::ParseIntError};
 
+use chrono::NaiveDate;
 use fantoccini::{
     error::{CmdError, NewSessionError},
     Client, ClientBuilder, Locator,
 };
+use once_cell::sync::Lazy;
 use thiserror::Error;
 use url::Url;
 
 use crate::{
     client,
-    member::{Member, StudentId},
+    member::{Member, MemberType, StudentId},
 };
 
+/// The base URL of the SUMS website. This is a string instead of a Url since
+/// Fantoccini takes URLs as strings.
 const BASE_URL: &str = "https://su.nottingham.ac.uk";
+
+/// The source code for the addShowAllEntries() function. See the source code in
+/// the associated file for more information.
+const ADD_SHOW_ALL_ENTRIES_JS: &'static str = include_str!("js/add_show_all_entries.js");
+
+static DASHBOARD_URL: Lazy<Url> =
+    Lazy::new(|| Url::parse("https://student-dashboard.sums.su").unwrap());
 
 #[derive(Debug, Error)]
 pub enum SumsClientError {
@@ -38,6 +49,24 @@ pub enum SumsClientAuthError {
 impl From<CmdError> for SumsClientAuthError {
     fn from(err: CmdError) -> Self {
         SumsClientAuthError::SumsClientError(SumsClientError::WebDriverCmdError(err))
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum SumsClientMembersError {
+    #[error("A generic error occured (details within SumsClientError)")]
+    SumsClientError(#[from] SumsClientError),
+
+    #[error("Failed to convert string to integer. Usually means invalid student ID.")]
+    ParseIntError(#[from] ParseIntError),
+
+    #[error("Failed to parse date joined.")]
+    ChronoParseError(#[from] chrono::ParseError),
+}
+
+impl From<CmdError> for SumsClientMembersError {
+    fn from(err: CmdError) -> Self {
+        SumsClientMembersError::SumsClientError(SumsClientError::WebDriverCmdError(err))
     }
 }
 
@@ -107,6 +136,79 @@ impl SumsClient {
             Err(_) => Ok(()),
         }
     }
+
+    pub async fn members(&self) -> Result<Vec<Member>, SumsClientMembersError> {
+        self.go_to_member_page().await?;
+
+        self.client
+            .goto("https://student-dashboard.sums.su/groups/213/members")
+            .await?;
+
+        let entry_count = self
+            .client
+            .execute(ADD_SHOW_ALL_ENTRIES_JS, Vec::new())
+            .await?;
+
+        // let entry_count_u64 = entry_count.as_u64().unwrap_or(100000);
+        let entry_count_u64 = 100000;
+
+        let entry_count_selector = self
+            .client
+            .find(Locator::Css(
+                "#group-member-list-datatable_length > label:nth-child(1) > select:nth-child(1)",
+            ))
+            .await?;
+
+        entry_count_selector
+            .select_by_value(&entry_count_u64.to_string())
+            .await?;
+
+        let table_body = self
+            .client
+            .find(Locator::Css(
+                "#group-member-list-datatable > tbody:nth-child(2)",
+            ))
+            .await?;
+
+        let member_elements = table_body.find_all(Locator::Css("tr")).await?;
+
+        let mut members = Vec::new();
+
+        for member_element in member_elements {
+            let member_table_data = member_element.find_all(Locator::Css("td")).await?;
+
+            let member = Member::new(
+                member_table_data[0].text().await?.parse()?,
+                member_table_data[1].text().await?,
+                MemberType::Student,
+                member_table_data[3].text().await?,
+                NaiveDate::parse_from_str(&member_table_data[4].text().await?, "%Y-%m-%d")?,
+            );
+
+            println!("{:?}", member);
+
+            members.push(member);
+        }
+
+        Ok(members)
+    }
+
+    async fn go_to_member_page(&self) -> Result<(), SumsClientError> {
+        self.client.goto(BASE_URL).await?;
+
+        let user_button = self.client.find(Locator::Id("userActionsInvoker")).await?;
+        user_button.click().await?;
+
+        let login_button = self
+            .client
+            .find(Locator::Id("studentDashboardLink"))
+            .await?;
+        login_button.click().await?;
+
+        self.client.wait().for_url(DASHBOARD_URL.clone()).await?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -115,7 +217,7 @@ mod tests {
 
     use crate::client::{SumsClient, SumsClientAuthError, SumsClientNewError};
 
-    use super::SumsClientError;
+    use super::SumsClientMembersError;
 
     const GROUP_ID: u16 = 213;
     const WEBDRIVER_ADDRESS: &str = "http://localhost:9515";
@@ -138,6 +240,23 @@ mod tests {
         let password = env::var("SUMS_PASSWORD").expect("Invalid password environment variable");
 
         client.authenticate(username, password).await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_members() -> Result<(), SumsClientMembersError> {
+        let client = SumsClient::new(GROUP_ID, WEBDRIVER_ADDRESS).await.unwrap();
+
+        let username = env::var("SUMS_USERNAME").expect("Invalid username environment variable");
+        let password = env::var("SUMS_PASSWORD").expect("Invalid password environment variable");
+
+        client
+            .authenticate(username, password)
+            .await
+            .expect("Auth failed");
+
+        client.members().await?;
 
         Ok(())
     }
