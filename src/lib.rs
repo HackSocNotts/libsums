@@ -1,2 +1,2 @@
-mod client;
-mod member;
+pub mod client;
+pub mod member;
