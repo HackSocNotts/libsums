@@ -2,7 +2,7 @@ use chrono::NaiveDate;
 
 pub type StudentId = u32;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum MemberType {
     Student,
 }
@@ -19,7 +19,7 @@ pub enum MemberType {
 //     }
 // }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Member {
     pub student_id: StudentId,
     pub name: String,
