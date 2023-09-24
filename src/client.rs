@@ -185,8 +185,6 @@ impl SumsClient {
                 NaiveDate::parse_from_str(&member_table_data[4].text().await?, "%Y-%m-%d")?,
             );
 
-            println!("{:?}", member);
-
             members.push(member);
         }
 
