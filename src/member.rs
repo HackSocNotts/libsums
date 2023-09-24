@@ -21,11 +21,11 @@ pub enum MemberType {
 
 #[derive(Debug)]
 pub struct Member {
-    student_id: StudentId,
-    name: String,
-    member_type: MemberType,
-    subscription_purchased: String,
-    date_joined: NaiveDate,
+    pub student_id: StudentId,
+    pub name: String,
+    pub member_type: MemberType,
+    pub subscription_purchased: String,
+    pub date_joined: NaiveDate,
 }
 
 impl Member {
