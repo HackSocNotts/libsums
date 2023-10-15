@@ -1,11 +1,11 @@
 use std::{collections::HashMap, num::ParseIntError};
 
 use chrono::NaiveDate;
-use fantoccini::{
-    error::{CmdError, NewSessionError},
-    Client, ClientBuilder, Locator,
-};
+use futures::executor::block_on;
 use once_cell::sync::Lazy;
+use thirtyfour::{
+    fantoccini::error::CmdError, prelude::WebDriverError, By, DesiredCapabilities, WebDriver,
+};
 use thiserror::Error;
 use url::Url;
 
@@ -28,13 +28,16 @@ static DASHBOARD_URL: Lazy<Url> =
 #[derive(Debug, Error)]
 pub enum SumsClientError {
     #[error("A WebDriver command failed")]
-    WebDriverCmdError(#[from] CmdError),
+    WebDriverCmdError(#[from] WebDriverError),
+
+    #[error("An error occured within Fantoccini")]
+    FantocciniError(#[from] CmdError),
 }
 
 #[derive(Debug, Error)]
 pub enum SumsClientNewError {
     #[error("Failed to create new WebDriver session")]
-    WebDriverNewSessionError(#[from] NewSessionError),
+    WebDriverNewSessionError(#[from] WebDriverError),
 }
 
 #[derive(Debug, Error)]
@@ -46,9 +49,15 @@ pub enum SumsClientAuthError {
     AuthFailedError(String),
 }
 
+impl From<WebDriverError> for SumsClientAuthError {
+    fn from(err: WebDriverError) -> Self {
+        SumsClientAuthError::SumsClientError(SumsClientError::WebDriverCmdError(err))
+    }
+}
+
 impl From<CmdError> for SumsClientAuthError {
     fn from(err: CmdError) -> Self {
-        SumsClientAuthError::SumsClientError(SumsClientError::WebDriverCmdError(err))
+        SumsClientAuthError::SumsClientError(SumsClientError::FantocciniError(err))
     }
 }
 
@@ -64,45 +73,49 @@ pub enum SumsClientMembersError {
     ChronoParseError(#[from] chrono::ParseError),
 }
 
-impl From<CmdError> for SumsClientMembersError {
-    fn from(err: CmdError) -> Self {
+impl From<WebDriverError> for SumsClientMembersError {
+    fn from(err: WebDriverError) -> Self {
         SumsClientMembersError::SumsClientError(SumsClientError::WebDriverCmdError(err))
     }
 }
 
 pub struct SumsClient {
-    client: Client,
+    client: WebDriver,
     group_id: u16,
 }
 
+impl Drop for SumsClient {
+    fn drop(&mut self) {
+        // thirtyfour doesn't clean up after itself so we do so here
+        block_on(self.client.quit());
+    }
+}
+
 impl SumsClient {
-    pub async fn new<S>(group_id: u16, webdriver_address: S) -> Result<Self, SumsClientNewError>
-    where
-        S: AsRef<str>,
-    {
-        let client = ClientBuilder::rustls()
-            .connect(webdriver_address.as_ref())
-            .await?;
+    pub async fn new(group_id: u16, webdriver_address: &str) -> Result<Self, SumsClientNewError> {
+        let caps = DesiredCapabilities::chrome();
+        let client = WebDriver::new(webdriver_address, caps).await?;
 
         Ok(Self { client, group_id })
     }
 
-    pub async fn authenticate<S>(&self, username: S, password: S) -> Result<(), SumsClientAuthError>
-    where
-        S: AsRef<str>,
-    {
+    pub async fn authenticate(
+        &self,
+        username: &str,
+        password: &str,
+    ) -> Result<(), SumsClientAuthError> {
         self.client.goto(BASE_URL).await?;
 
         // Click on the user icon in the top right
         self.client
-            .find(Locator::Id("userActionsInvoker"))
+            .find(By::Id("userActionsInvoker"))
             .await?
             .click()
             .await?;
 
         // Click on the student login button
         self.client
-            .find(Locator::XPath("//*[@id=\"userActions\"]/ul/li[1]/a[1]"))
+            .find(By::XPath("//*[@id=\"userActions\"]/ul/li[1]/a[1]"))
             .await?
             .click()
             .await?;
@@ -110,23 +123,19 @@ impl SumsClient {
         // Find the UoN login form
         let login_form = self
             .client
-            .form(Locator::XPath("/html/body/div/div/div/div[1]/form"))
+            .form(By::XPath("/html/body/div/div/div/div[1]/form"))
             .await?;
 
         // Fill in the username/password
-        login_form
-            .set(Locator::Id("username"), username.as_ref())
-            .await?;
-        login_form
-            .set(Locator::Id("password"), password.as_ref())
-            .await?;
+        login_form.set_by_name("j_username", username).await?;
+        login_form.set_by_name("j_password", password).await?;
 
         login_form.submit().await?;
 
         // Try to look for an error message on the login screen
         let login_error = self
             .client
-            .find(Locator::XPath("/html/body/div/div/div/div[1]/section/p"))
+            .find(By::XPath("/html/body/div/div/div/div[1]/section/p"))
             .await;
 
         // If an error message was found, we're still on the login screen, so
@@ -154,28 +163,26 @@ impl SumsClient {
 
         let entry_count_selector = self
             .client
-            .find(Locator::Css(
+            .find(By::Css(
                 "#group-member-list-datatable_length > label:nth-child(1) > select:nth-child(1)",
             ))
             .await?;
 
-        entry_count_selector
-            .select_by_value(&entry_count_u64.to_string())
-            .await?;
+        // entry_count_selector
+        //     .select_by_value(&entry_count_u64.to_string())
+        //     .await?;
 
         let table_body = self
             .client
-            .find(Locator::Css(
-                "#group-member-list-datatable > tbody:nth-child(2)",
-            ))
+            .find(By::Css("#group-member-list-datatable > tbody:nth-child(2)"))
             .await?;
 
-        let member_elements = table_body.find_all(Locator::Css("tr")).await?;
+        let member_elements = table_body.find_all(By::Css("tr")).await?;
 
         let mut members = Vec::new();
 
         for member_element in member_elements {
-            let member_table_data = member_element.find_all(Locator::Css("td")).await?;
+            let member_table_data = member_element.find_all(By::Css("td")).await?;
 
             let member = Member::new(
                 member_table_data[0].text().await?.parse()?,
@@ -194,13 +201,10 @@ impl SumsClient {
     async fn go_to_member_page(&self) -> Result<(), SumsClientError> {
         self.client.goto(BASE_URL).await?;
 
-        let user_button = self.client.find(Locator::Id("userActionsInvoker")).await?;
+        let user_button = self.client.find(By::Id("userActionsInvoker")).await?;
         user_button.click().await?;
 
-        let login_button = self
-            .client
-            .find(Locator::Id("studentDashboardLink"))
-            .await?;
+        let login_button = self.client.find(By::Id("studentDashboardLink")).await?;
         login_button.click().await?;
 
         self.client.wait().for_url(DASHBOARD_URL.clone()).await?;

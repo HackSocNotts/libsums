@@ -13,6 +13,7 @@ if (selector != null) {
     newOption.innerHTML = newOptionValue;
 
     selector.appendChild(newOption);
+    selector.value = newOptionValue;
 }
 
 return newOptionValue;
