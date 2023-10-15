@@ -74,17 +74,26 @@ pub struct SumsClient {
 }
 
 impl SumsClient {
-    pub async fn new<S>(group_id: u16, webdriver_address: S) -> Result<Self, SumsClientNewError>
-    where
-        S: AsRef<str>,
-    {
+    /// Creates a new SumsClient instance
+    ///
+    /// - `group_id` - The ID of your group. You can find it by going to your group's management
+    /// page, and looking at the URL.
+    /// - `webdriver_address` - The address of your webdriver server.
+    /// - `browser_name` The name of the browser you're using, as defined by the WebDriver spec.
+    /// For example, "chrome"
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the client fails to connect.
+    pub async fn new(
+        group_id: u16,
+        webdriver_address: &str,
+        browser_name: &str,
+    ) -> Result<Self, SumsClientNewError> {
         let mut client_builder = ClientBuilder::rustls();
 
-        // Selenium gets annoyed if we don't do this. We should probably let the user pass whatever
-        // here in case they're using Firefox or something, but geckodriver doesn't support
-        // simultaneous sessions so they probably shouldn't
         let mut capabilities = Capabilities::new();
-        capabilities.insert("browserName".to_string(), "chromium".into());
+        capabilities.insert("browserName".to_string(), browser_name.into());
         client_builder.capabilities(capabilities);
 
         let client = client_builder.connect(webdriver_address.as_ref()).await?;
@@ -229,7 +238,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_client() -> Result<(), SumsClientNewError> {
-        let client = SumsClient::new(GROUP_ID, WEBDRIVER_ADDRESS).await?;
+        let client = SumsClient::new(GROUP_ID, WEBDRIVER_ADDRESS, "chromium").await?;
 
         assert_eq!(GROUP_ID, client.group_id);
 
@@ -239,7 +248,9 @@ mod tests {
     #[tokio::test]
     async fn test_auth() -> Result<(), SumsClientAuthError> {
         // test_create_client should handle this
-        let client = SumsClient::new(GROUP_ID, WEBDRIVER_ADDRESS).await.unwrap();
+        let client = SumsClient::new(GROUP_ID, WEBDRIVER_ADDRESS, "chromium")
+            .await
+            .unwrap();
 
         let username = env::var("SUMS_USERNAME").expect("Invalid username environment variable");
         let password = env::var("SUMS_PASSWORD").expect("Invalid password environment variable");
@@ -251,7 +262,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_members() -> Result<(), SumsClientMembersError> {
-        let client = SumsClient::new(GROUP_ID, WEBDRIVER_ADDRESS).await.unwrap();
+        let client = SumsClient::new(GROUP_ID, WEBDRIVER_ADDRESS, "chromium")
+            .await
+            .unwrap();
 
         let username = env::var("SUMS_USERNAME").expect("Invalid username environment variable");
         let password = env::var("SUMS_PASSWORD").expect("Invalid password environment variable");
