@@ -84,7 +84,7 @@ impl SumsClient {
         // here in case they're using Firefox or something, but geckodriver doesn't support
         // simultaneous sessions so they probably shouldn't
         let mut capabilities = Capabilities::new();
-        capabilities.insert("browserName".to_string(), "chrome".into());
+        capabilities.insert("browserName".to_string(), "chromium".into());
         client_builder.capabilities(capabilities);
 
         let client = client_builder.connect(webdriver_address.as_ref()).await?;
