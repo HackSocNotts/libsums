@@ -1,4 +1,4 @@
-use std::{collections::HashMap, num::ParseIntError};
+use std::num::ParseIntError;
 
 use chrono::NaiveDate;
 use fantoccini::{
@@ -9,10 +9,7 @@ use once_cell::sync::Lazy;
 use thiserror::Error;
 use url::Url;
 
-use crate::{
-    client,
-    member::{Member, MemberType, StudentId},
-};
+use crate::member::{Member, MemberType};
 
 /// The base URL of the SUMS website. This is a string instead of a Url since
 /// Fantoccini takes URLs as strings.
@@ -141,11 +138,13 @@ impl SumsClient {
         self.go_to_member_page().await?;
 
         self.client
-            .goto("https://student-dashboard.sums.su/groups/213/members")
+            .goto(&format!(
+                "https://student-dashboard.sums.su/groups/{}/members",
+                self.group_id
+            ))
             .await?;
 
-        let entry_count = self
-            .client
+        self.client
             .execute(ADD_SHOW_ALL_ENTRIES_JS, Vec::new())
             .await?;
 
