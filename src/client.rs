@@ -3,6 +3,7 @@ use std::num::ParseIntError;
 use chrono::NaiveDate;
 use fantoccini::{
     error::{CmdError, NewSessionError},
+    wd::Capabilities,
     Client, ClientBuilder, Locator,
 };
 use once_cell::sync::Lazy;
@@ -77,9 +78,16 @@ impl SumsClient {
     where
         S: AsRef<str>,
     {
-        let client = ClientBuilder::rustls()
-            .connect(webdriver_address.as_ref())
-            .await?;
+        let mut client_builder = ClientBuilder::rustls();
+
+        // Selenium gets annoyed if we don't do this. We should probably let the user pass whatever
+        // here in case they're using Firefox or something, but geckodriver doesn't support
+        // simultaneous sessions so they probably shouldn't
+        let mut capabilities = Capabilities::new();
+        capabilities.insert("browserName".to_string(), "chrome".into());
+        client_builder.capabilities(capabilities);
+
+        let client = client_builder.connect(webdriver_address.as_ref()).await?;
 
         Ok(Self { client, group_id })
     }
