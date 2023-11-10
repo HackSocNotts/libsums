@@ -194,7 +194,7 @@ impl SumsClient {
             let member_table_data = member_element.find_all(Locator::Css("td")).await?;
 
             let member = Member::new(
-                member_table_data[0].text().await?.parse()?,
+                member_table_data[0].text().await?,
                 member_table_data[1].text().await?,
                 MemberType::Student,
                 member_table_data[3].text().await?,

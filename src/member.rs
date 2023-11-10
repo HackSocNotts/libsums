@@ -1,6 +1,6 @@
 use chrono::NaiveDate;
 
-pub type StudentId = u32;
+pub type StudentId = String;
 
 #[derive(Debug, Clone)]
 pub enum MemberType {
