@@ -25,19 +25,19 @@ static DASHBOARD_URL: Lazy<Url> =
 
 #[derive(Debug, Error)]
 pub enum SumsClientError {
-    #[error("A WebDriver command failed")]
+    #[error("A WebDriver command failed: {0:?}")]
     WebDriverCmdError(#[from] CmdError),
 }
 
 #[derive(Debug, Error)]
 pub enum SumsClientNewError {
-    #[error("Failed to create new WebDriver session")]
+    #[error("Failed to create new WebDriver session: {0:?}")]
     WebDriverNewSessionError(#[from] NewSessionError),
 }
 
 #[derive(Debug, Error)]
 pub enum SumsClientAuthError {
-    #[error("A generic error occured (details within SumsClientError)")]
+    #[error("A generic error occured: {0:?}")]
     SumsClientError(#[from] SumsClientError),
 
     #[error("Authentication failed with message {0}")]
@@ -52,7 +52,7 @@ impl From<CmdError> for SumsClientAuthError {
 
 #[derive(Debug, Error)]
 pub enum SumsClientMembersError {
-    #[error("A generic error occured (details within SumsClientError)")]
+    #[error("A generic error occured: {0:?}")]
     SumsClientError(#[from] SumsClientError),
 
     #[error("Failed to convert string to integer. Usually means invalid student ID.")]
